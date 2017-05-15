@@ -5,7 +5,7 @@ TimerSet::TimerSet(UDP& udp, const char* poolServerName){
 }
 
 TimerSet::~TimerSet(){
-	
+	delete m_timeClient;
 }
 
 void TimerSet::begin(){
