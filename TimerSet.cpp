@@ -1,5 +1,9 @@
 #include "TimerSet.h"
+#include <EEPROM.h>
+
 #define DEBUG_TIME_SET
+
+#define CUR_TIME_W_TZ (m_timeZone + (m_timeClient->getEpochTime() % 86400L))
 
 TimerSet::TimerSet(UDP& udp, const char* poolServerName){
 	m_timeClient = new NTPClient (udp, poolServerName);
@@ -10,16 +14,24 @@ TimerSet::~TimerSet(){
 }
 
 void TimerSet::begin(){
+	
+	writeEEPROM(0);
+	loadEEPROM(0);
+	
 	m_timeClient->begin();
 	m_timeClient->update();
-	m_lastStateChange = m_timeClient->getEpochTime() % 86400;
+	
+	m_lastStateChange = CUR_TIME_W_TZ;
+	m_currentState = 0;
 }
 
 void TimerSet::end(){
 	m_timeClient->end();
+	m_currentState = -1;
 }
 
 void TimerSet::printTime(){
+#ifdef DEBUG_TIME_SET
 	Serial.println("TimerSet");
 	Serial.println(m_timeClient->getEpochTime());
 	Serial.println(m_timeClient->getFormattedTime()); 
@@ -27,22 +39,27 @@ void TimerSet::printTime(){
 	Serial.println(m_timeClient->getHours());
 	Serial.println(m_timeClient->getMinutes());
 	Serial.println(m_timeClient->getSeconds());
+#endif
 }
 
-// ============================================================
-// Return 1: ON; 0: OFF; -1: NO EVENT
-// If current state is OFF, check if it should be turned to ON
-// If current state is ON,  check if it should be turned to OFF
-// ============================================================
-
-int TimerSet::getState(){
-	
+// =================================================================
+// int TimerSet::checkState()
+// + Return new state 1: START; 0: STOP; -1: INACTIVED; -2: NO EVENT
+// + If current state is STOP, check if it should be turned to START
+// + If current state is START,  check if it should be turned to STOP
+// =================================================================
+int TimerSet::checkState(){
 	int t;
 	int newState;
-	unsigned int *p;
+	unsigned long *p;
 	
-	unsigned long secInDay = m_timeClient->getEpochTime() % 86400; 
-	unsigned int sinceLastCheck = secInDay - m_lastCheck;
+	unsigned long secInDay = CUR_TIME_W_TZ; 
+	unsigned long sinceLastCheck = secInDay - m_lastCheck;
+	
+	String s = String(m_stopTimer[0]);
+	
+	if(m_currentState == -1)
+		return -1;
 	
 	
 	if(sinceLastCheck > 5){ // Check every 5" since last check
@@ -52,6 +69,7 @@ int TimerSet::getState(){
 		if(m_currentState == 0) { // If it is OFF, find event to turn it ON
 			newState = 1;
 			p = m_startTimer;
+			
 			#ifdef DEBUG_TIME_SET
 				Serial.println("OFF finds ON");
 			#endif
@@ -59,6 +77,7 @@ int TimerSet::getState(){
 		} else { // If it is ON, find event to turn it OFF
 			newState = 0;
 			p = m_stopTimer;
+			
 			#ifdef DEBUG_TIME_SET
 				Serial.println("ON finds OFF");
 			#endif
@@ -82,7 +101,7 @@ int TimerSet::getState(){
 				Serial.println(t);
 			#endif
 			
-			if (t>=0 && t<5) { // If interval reached
+			if (t>=0 && t<5) {
 				m_currentState = newState;
 				m_lastStateChange = secInDay;
 				
@@ -94,13 +113,196 @@ int TimerSet::getState(){
 					Serial.print(" at: ");
 					Serial.println(m_timeClient->getFormattedTime());
 				#endif
-				break;
+				
+				return m_currentState;
+				
 			}
 		}
 	} else {
-		return -1;
+		return -2;
 	}
 	
-	return m_currentState;
+	return -2;
 
 }
+// =================================================================
+// void forceState(int state)
+// =================================================================
+void TimerSet::forceState(int state) {
+	m_currentState = state;
+	m_lastStateChange = CUR_TIME_W_TZ;
+}
+
+// =================================================================
+// setTimer(int idx, int startTime, int stopTime)
+// Idx = 0 -> set interval
+// startTime/stopTime is seconds in day
+// =================================================================
+void TimerSet::setTimer(int idx, unsigned long startTime, unsigned long stopTime) {
+	
+	m_startTimer[idx] = startTime;
+	m_startTimer[idx] = stopTime;
+	
+	if(idx == 0)
+		m_lastStateChange = CUR_TIME_W_TZ;
+}
+
+// =================================================================
+// void setTimeZone(int timeZone)
+// timeZone param is in number of seconds
+// =================================================================
+void TimerSet::setTimeZone(int timeZone) {
+	m_timeZone = timeZone;
+}
+
+// =================================================================
+// int TimerSet::writeEEPROM(int pos)
+// Return number of bytes include '\0' written to EEPROM
+// =================================================================
+int TimerSet::writeEEPROM(int pos) {
+	String str="";
+	char buf[MAX_LEN_TO_STORE];
+	
+	EEPROM.begin(1024);
+	
+	for (int i=0; i<MAX_LEN_TO_STORE; i++)
+		buf[i] = '\0';
+	
+	// Adding Start Timer
+	for (int i=0; i<NUM_TIMERS; i++) {
+		str += m_startTimer[i];
+		str += "#";
+	}
+	
+	// Adding Stop Timer
+	for (int i=0; i<NUM_TIMERS; i++) {
+		str += m_stopTimer[i];
+		str += "#";
+	}
+	
+	// Adding time zone
+	str += m_timeZone;
+	str += "#";
+	
+	int len = str.length();
+	
+	
+	#ifdef DEBUG_TIME_SET 
+		Serial.print("SHIT!: ");
+		Serial.print(str);
+		Serial.print(" - ");
+		Serial.println(len);
+	#endif
+	
+	str.toCharArray (buf, MAX_LEN_TO_STORE);
+	_storeEEPROM(buf, pos, len);
+	
+	EEPROM.end();
+	
+	return len;
+}
+
+// =================================================================
+// int TimerSet::loadEEPROM(int pos)
+// =================================================================
+void TimerSet::loadEEPROM(int pos) {
+	char buf[MAX_LEN_TO_STORE];
+	
+	unsigned long *p = m_startTimer;
+	
+	int i = 0;
+	int j = 0;
+	int c = 0;
+	String str = "";
+	
+	EEPROM.begin(1024);
+	_loadEEPROM(buf, pos, MAX_LEN_TO_STORE);
+	
+	// Read Timers
+	while (c < NUM_TIMERS*2){
+		if(buf[i] != '#'){
+			str += buf[i];
+			i++;
+		}else {
+			i++;
+			p[j] = (unsigned long) str.toInt();
+			
+			str = "";
+			
+			#ifdef DEBUG_TIME_SET 
+				Serial.print("Loaded[");
+				Serial.print(j);
+				Serial.print("] = ");
+				Serial.println(p[j]);
+			#endif
+			
+			c++;
+			
+			if(c == NUM_TIMERS) {
+				p = m_stopTimer;
+				j = 0;
+			}
+		}
+	}
+	
+	// Read rime zone
+	while (buf[i] != '#'){
+		str += buf[i];
+		i++;
+	}
+	
+	m_timeZone = (unsigned long) str.toInt();
+	
+	#ifdef DEBUG_TIME_SET 
+		Serial.print("TimeZone Loaded: ");
+		Serial.println(m_timeZone);
+	#endif
+}
+
+// =================================================================
+// void TimerSet::_storeEEPROM(char* str, int pos, int len)
+// A static function utility to write a str including '\0' to EEPROM
+// =================================================================
+void TimerSet::_storeEEPROM(char* str, int pos, int len){
+
+	#ifdef DEBUG_TIME_SET
+		Serial.print("STORE: ");
+		Serial.print(str);
+		Serial.print(" AT: ");
+		Serial.print(pos);
+		Serial.print(" LEN: ");
+		Serial.println(len);
+	#endif
+
+	for (int i=0; i<=len; i++){
+		EEPROM.write(pos+i, str[i]); // The null-terminal '\0' in string is also strored
+    
+    #ifdef DEBUG_TIME_SET
+		Serial.print(pos+i);
+		Serial.print("-W-");
+		Serial.println((byte)str[i]);
+    #endif
+  }
+}
+
+void TimerSet::_loadEEPROM(char* str, int pos, int len){
+  
+	for (int i=0; i<len; i++){
+		str[i] = (char)EEPROM.read(i+pos);
+	}
+
+	#ifdef DEBUG_TIME_SET
+		Serial.print("LOAD: ");
+		Serial.print(str);
+		Serial.print(" AT: ");
+		Serial.print(pos);
+		Serial.print(" LEN: ");
+		Serial.println(len);
+	#endif
+}
+
+
+
+
+
+
