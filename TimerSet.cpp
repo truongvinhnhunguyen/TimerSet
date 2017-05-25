@@ -1,12 +1,12 @@
 #include "TimerSet.h"
 #include <EEPROM.h>
 
-#define DEBUG_TIME_SET
+#define _DEBUG_TIME_SET_
 
 #define CUR_TIME_W_TZ (m_timeZone + (m_timeClient->getEpochTime() % 86400L))
 
-TimerSet::TimerSet(UDP& udp, const char* poolServerName){
-	m_timeClient = new NTPClient (udp, poolServerName);
+TimerSet::TimerSet(NTPClient* timeClient){
+	m_timeClient = timeClient;
 }
 
 TimerSet::~TimerSet(){
@@ -15,14 +15,10 @@ TimerSet::~TimerSet(){
 
 void TimerSet::begin(){
 	
-	writeEEPROM(0);
-	loadEEPROM(0);
-	
 	m_timeClient->begin();
 	m_timeClient->update();
 	
 	m_lastStateChange = CUR_TIME_W_TZ;
-	m_currentState = 0;
 }
 
 void TimerSet::end(){
@@ -31,7 +27,7 @@ void TimerSet::end(){
 }
 
 void TimerSet::printTime(){
-#ifdef DEBUG_TIME_SET
+#ifdef _DEBUG_TIME_SET_
 	Serial.println("TimerSet");
 	Serial.println(m_timeClient->getEpochTime());
 	Serial.println(m_timeClient->getFormattedTime()); 
@@ -48,7 +44,7 @@ void TimerSet::printTime(){
 // + If current state is STOP, check if it should be turned to START
 // + If current state is START,  check if it should be turned to STOP
 // =================================================================
-int TimerSet::checkState(){
+int TimerSet::loop(){
 	int t;
 	int newState;
 	unsigned long *p;
@@ -70,7 +66,7 @@ int TimerSet::checkState(){
 			newState = 1;
 			p = m_startTimer;
 			
-			#ifdef DEBUG_TIME_SET
+			#ifdef _DEBUG_TIME_SET_
 				Serial.println("OFF finds ON");
 			#endif
 		
@@ -78,7 +74,7 @@ int TimerSet::checkState(){
 			newState = 0;
 			p = m_stopTimer;
 			
-			#ifdef DEBUG_TIME_SET
+			#ifdef _DEBUG_TIME_SET_
 				Serial.println("ON finds OFF");
 			#endif
 		}	
@@ -89,7 +85,7 @@ int TimerSet::checkState(){
 			else
 				t = secInDay - p[i];
 			
-			#ifdef DEBUG_TIME_SET
+			#ifdef _DEBUG_TIME_SET_LV2_
 				Serial.print(i);
 				Serial.print(" / ");
 				Serial.print(secInDay);
@@ -105,7 +101,7 @@ int TimerSet::checkState(){
 				m_currentState = newState;
 				m_lastStateChange = secInDay;
 				
-				#ifdef DEBUG_TIME_SET
+				#ifdef _DEBUG_TIME_SET_
 					Serial.print("Timer[");
 					Serial.print(i);
 					Serial.print("] CHANGED to: ");
@@ -114,7 +110,7 @@ int TimerSet::checkState(){
 					Serial.println(m_timeClient->getFormattedTime());
 				#endif
 				
-				return m_currentState;
+				return m_currentState; 
 				
 			}
 		}
@@ -127,10 +123,18 @@ int TimerSet::checkState(){
 }
 // =================================================================
 // void forceState(int state)
+// 1: START; 0: STOP; -1: INACTIVATED
 // =================================================================
 void TimerSet::forceState(int state) {
 	m_currentState = state;
 	m_lastStateChange = CUR_TIME_W_TZ;
+}
+
+// =================================================================
+// int getState()
+// =================================================================
+int TimerSet::getState() {
+    return m_currentState;
 }
 
 // =================================================================
@@ -186,14 +190,6 @@ int TimerSet::writeEEPROM(int pos) {
 	
 	int len = str.length();
 	
-	
-	#ifdef DEBUG_TIME_SET 
-		Serial.print("SHIT!: ");
-		Serial.print(str);
-		Serial.print(" - ");
-		Serial.println(len);
-	#endif
-	
 	str.toCharArray (buf, MAX_LEN_TO_STORE);
 	_storeEEPROM(buf, pos, len);
 	
@@ -222,14 +218,12 @@ void TimerSet::loadEEPROM(int pos) {
 	while (c < NUM_TIMERS*2){
 		if(buf[i] != '#'){
 			str += buf[i];
-			i++;
 		}else {
-			i++;
 			p[j] = (unsigned long) str.toInt();
 			
 			str = "";
 			
-			#ifdef DEBUG_TIME_SET 
+			#ifdef _DEBUG_TIME_SET_ 
 				Serial.print("Loaded[");
 				Serial.print(j);
 				Serial.print("] = ");
@@ -237,12 +231,15 @@ void TimerSet::loadEEPROM(int pos) {
 			#endif
 			
 			c++;
+			j++;
 			
 			if(c == NUM_TIMERS) {
 				p = m_stopTimer;
 				j = 0;
 			}
 		}
+		
+		i++;
 	}
 	
 	// Read rime zone
@@ -253,7 +250,7 @@ void TimerSet::loadEEPROM(int pos) {
 	
 	m_timeZone = (unsigned long) str.toInt();
 	
-	#ifdef DEBUG_TIME_SET 
+	#ifdef _DEBUG_TIME_SET_ 
 		Serial.print("TimeZone Loaded: ");
 		Serial.println(m_timeZone);
 	#endif
@@ -265,7 +262,7 @@ void TimerSet::loadEEPROM(int pos) {
 // =================================================================
 void TimerSet::_storeEEPROM(char* str, int pos, int len){
 
-	#ifdef DEBUG_TIME_SET
+	#ifdef _DEBUG_TIME_SET_LV2_
 		Serial.print("STORE: ");
 		Serial.print(str);
 		Serial.print(" AT: ");
@@ -277,7 +274,7 @@ void TimerSet::_storeEEPROM(char* str, int pos, int len){
 	for (int i=0; i<=len; i++){
 		EEPROM.write(pos+i, str[i]); // The null-terminal '\0' in string is also strored
     
-    #ifdef DEBUG_TIME_SET
+    #ifdef _DEBUG_TIME_SET_
 		Serial.print(pos+i);
 		Serial.print("-W-");
 		Serial.println((byte)str[i]);
@@ -291,7 +288,7 @@ void TimerSet::_loadEEPROM(char* str, int pos, int len){
 		str[i] = (char)EEPROM.read(i+pos);
 	}
 
-	#ifdef DEBUG_TIME_SET
+	#ifdef _DEBUG_TIME_SET_
 		Serial.print("LOAD: ");
 		Serial.print(str);
 		Serial.print(" AT: ");
