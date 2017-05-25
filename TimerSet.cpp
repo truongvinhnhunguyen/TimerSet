@@ -3,28 +3,12 @@
 
 #define _DEBUG_TIME_SET_
 
-#define CUR_TIME_W_TZ (m_timeZone + (m_timeClient->getEpochTime() % 86400L))
+#define CUR_TIME_W_TZ (m_timeZone*3600 + (m_timeClient->getEpochTime() % 86400L))
 
 TimerSet::TimerSet(NTPClient* timeClient){
 	m_timeClient = timeClient;
 }
 
-TimerSet::~TimerSet(){
-	delete m_timeClient;
-}
-
-void TimerSet::begin(){
-	
-	m_timeClient->begin();
-	m_timeClient->update();
-	
-	m_lastStateChange = CUR_TIME_W_TZ;
-}
-
-void TimerSet::end(){
-	m_timeClient->end();
-	m_currentState = -1;
-}
 
 void TimerSet::printTime(){
 #ifdef _DEBUG_TIME_SET_
@@ -85,7 +69,7 @@ int TimerSet::loop(){
 			else
 				t = secInDay - p[i];
 			
-			#ifdef _DEBUG_TIME_SET_LV2_
+			/*#ifdef _DEBUG_TIME_SET_LV2_
 				Serial.print(i);
 				Serial.print(" / ");
 				Serial.print(secInDay);
@@ -95,7 +79,7 @@ int TimerSet::loop(){
 				Serial.print(p[i]);
 				Serial.print(" / ");
 				Serial.println(t);
-			#endif
+			#endif*/
 			
 			if (t>=0 && t<5) {
 				m_currentState = newState;
@@ -145,10 +129,10 @@ int TimerSet::getState() {
 void TimerSet::setTimer(int idx, unsigned long startTime, unsigned long stopTime) {
 	
 	m_startTimer[idx] = startTime;
-	m_startTimer[idx] = stopTime;
+	m_stopTimer[idx] = stopTime;
 	
 	if(idx == 0)
-		m_lastStateChange = CUR_TIME_W_TZ;
+            m_lastStateChange = CUR_TIME_W_TZ;
 }
 
 // =================================================================
@@ -157,6 +141,32 @@ void TimerSet::setTimer(int idx, unsigned long startTime, unsigned long stopTime
 // =================================================================
 void TimerSet::setTimeZone(int timeZone) {
 	m_timeZone = timeZone;
+}
+
+// =================================================================
+// String TimerSet::toString()
+// Put data into a String to store in EEPROM or publishing.
+// =================================================================
+String TimerSet::toString(){
+    String str="";
+    
+    // Adding Start Timer
+    for (int i=0; i<NUM_TIMERS; i++) {
+            str += m_startTimer[i];
+            str += "#";
+    }
+
+    // Adding Stop Timer
+    for (int i=0; i<NUM_TIMERS; i++) {
+            str += m_stopTimer[i];
+            str += "#";
+    }
+
+    // Adding time zone
+    str += m_timeZone;
+    str += "#";
+    
+    return str;
 }
 
 // =================================================================
@@ -172,21 +182,7 @@ int TimerSet::writeEEPROM(int pos) {
 	for (int i=0; i<MAX_LEN_TO_STORE; i++)
 		buf[i] = '\0';
 	
-	// Adding Start Timer
-	for (int i=0; i<NUM_TIMERS; i++) {
-		str += m_startTimer[i];
-		str += "#";
-	}
-	
-	// Adding Stop Timer
-	for (int i=0; i<NUM_TIMERS; i++) {
-		str += m_stopTimer[i];
-		str += "#";
-	}
-	
-	// Adding time zone
-	str += m_timeZone;
-	str += "#";
+	str = toString();
 	
 	int len = str.length();
 	
@@ -242,7 +238,7 @@ void TimerSet::loadEEPROM(int pos) {
 		i++;
 	}
 	
-	// Read rime zone
+	// Read time zone
 	while (buf[i] != '#'){
 		str += buf[i];
 		i++;
@@ -272,7 +268,7 @@ void TimerSet::_storeEEPROM(char* str, int pos, int len){
 	#endif
 
 	for (int i=0; i<=len; i++){
-		EEPROM.write(pos+i, str[i]); // The null-terminal '\0' in string is also strored
+		EEPROM.write(pos+i, str[i]); // The null-terminal '\0' in string is also stored
     
     #ifdef _DEBUG_TIME_SET_
 		Serial.print(pos+i);
@@ -288,14 +284,14 @@ void TimerSet::_loadEEPROM(char* str, int pos, int len){
 		str[i] = (char)EEPROM.read(i+pos);
 	}
 
-	#ifdef _DEBUG_TIME_SET_
+	/*#ifdef _DEBUG_TIME_SET_
 		Serial.print("LOAD: ");
 		Serial.print(str);
 		Serial.print(" AT: ");
 		Serial.print(pos);
 		Serial.print(" LEN: ");
 		Serial.println(len);
-	#endif
+	#endif*/
 }
 
 

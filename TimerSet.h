@@ -26,19 +26,16 @@ unsigned long m_timeZone = 7*60*60; // Number of seconds
 
 public:
 	TimerSet(NTPClient* timeClient);
-	~TimerSet();
-	
+		
 	void setTimeZone(int timeZone);
-	
-	void begin();
-	void end();
-	
 	
 	void setTimer(int idx, unsigned long startTime, unsigned long stopTime);
 	
 	int loop();
 	void forceState(int state); 
         int getState();
+        
+        String toString();
 	
 	int writeEEPROM(int pos);
 	void loadEEPROM(int pos);
