@@ -3,7 +3,8 @@
 
 #define _DEBUG_TIME_SET_
 
-#define CUR_TIME_W_TZ (m_timeZone*3600 + (m_timeClient->getEpochTime() % 86400L))
+// #define SEC_IN_DAY_W_TZ ((m_timeZone + m_timeClient->getEpochTime())% 86400UL)
+#define SEC_IN_DAY_W_TZ m_timeClient->getEpochTime()% 86400UL
 
 TimerSet::TimerSet(NTPClient* timeClient){
 	m_timeClient = timeClient;
@@ -33,71 +34,74 @@ int TimerSet::loop(){
 	int newState;
 	unsigned long *p;
 	
-	unsigned long secInDay = CUR_TIME_W_TZ; 
+	unsigned long secInDay = SEC_IN_DAY_W_TZ;; 
+        
+      
+        
+        
 	unsigned long sinceLastCheck = secInDay - m_lastCheck;
 	
 	String s = String(m_stopTimer[0]);
 	
 	if(m_currentState == -1)
 		return -1;
-	
-	
+        
 	if(sinceLastCheck > 5){ // Check every 5" since last check
-	
-		m_lastCheck = secInDay;
-		
-		if(m_currentState == 0) { // If it is OFF, find event to turn it ON
-			newState = 1;
-			p = m_startTimer;
-			
-			#ifdef _DEBUG_TIME_SET_
-				Serial.println("OFF finds ON");
-			#endif
-		
-		} else { // If it is ON, find event to turn it OFF
-			newState = 0;
-			p = m_stopTimer;
-			
-			#ifdef _DEBUG_TIME_SET_
-				Serial.println("ON finds OFF");
-			#endif
-		}	
-			
-		for(int i = 0; i < NUM_TIMERS; i++){
-			if(i == 0)
-				t = secInDay - m_lastStateChange - p[i];
-			else
-				t = secInDay - p[i];
-			
-			/*#ifdef _DEBUG_TIME_SET_LV2_
-				Serial.print(i);
-				Serial.print(" / ");
-				Serial.print(secInDay);
-				Serial.print(" / ");
-				Serial.print(m_lastStateChange);
-				Serial.print(" / ");
-				Serial.print(p[i]);
-				Serial.print(" / ");
-				Serial.println(t);
-			#endif*/
-			
-			if (t>=0 && t<5) {
-				m_currentState = newState;
-				m_lastStateChange = secInDay;
-				
-				#ifdef _DEBUG_TIME_SET_
-					Serial.print("Timer[");
-					Serial.print(i);
-					Serial.print("] CHANGED to: ");
-					Serial.print(m_currentState);
-					Serial.print(" at: ");
-					Serial.println(m_timeClient->getFormattedTime());
-				#endif
-				
-				return m_currentState; 
-				
-			}
-		}
+            
+            m_lastCheck = secInDay;
+
+            if(m_currentState == 0) { // If it is OFF, find event to turn it ON
+                    newState = 1;
+                    p = m_startTimer;
+
+                    #ifdef _DEBUG_TIME_SET_
+                        Serial.println("OFF finds ON");
+                    #endif
+
+            } else { // If it is ON, find event to turn it OFF
+                    newState = 0;
+                    p = m_stopTimer;
+
+                    #ifdef _DEBUG_TIME_SET_
+                        Serial.println("ON finds OFF");
+                    #endif
+            }	
+
+            for(int i = 0; i < NUM_TIMERS; i++){
+                    if(i == 0)
+                            t = secInDay - m_lastStateChange - p[i];
+                    else
+                            t = secInDay - p[i];
+
+                    /*#ifdef _DEBUG_TIME_SET_
+                            Serial.print(i);
+                            Serial.print(" / ");
+                            Serial.print(secInDay);
+                            Serial.print(" / ");
+                            Serial.print(m_lastStateChange);
+                            Serial.print(" / ");
+                            Serial.print(p[i]);
+                            Serial.print(" / ");
+                            Serial.println(t);
+                    #endif*/
+
+                    if ((t>=0 && t<5)||(t<0 && t>-5)) {
+                            m_currentState = newState;
+                            m_lastStateChange = secInDay;
+
+                            #ifdef _DEBUG_TIME_SET_
+                                    Serial.print("Timer[");
+                                    Serial.print(i);
+                                    Serial.print("] CHANGED to: ");
+                                    Serial.print(m_currentState);
+                                    Serial.print(" at: ");
+                                    Serial.println(m_timeClient->getFormattedTime());
+                            #endif
+
+                            return m_currentState; 
+
+                    }
+            }
 	} else {
 		return -2;
 	}
@@ -111,7 +115,7 @@ int TimerSet::loop(){
 // =================================================================
 void TimerSet::forceState(int state) {
 	m_currentState = state;
-	m_lastStateChange = CUR_TIME_W_TZ;
+	m_lastStateChange = SEC_IN_DAY_W_TZ;
 }
 
 // =================================================================
@@ -122,17 +126,18 @@ int TimerSet::getState() {
 }
 
 // =================================================================
-// setTimer(int idx, int startTime, int stopTime)
-// Idx = 0 -> set interval
-// startTime/stopTime is seconds in day
+// TimerSet::setTimer(unsigned long[] startTime, unsigned long[] stopTime)
 // =================================================================
-void TimerSet::setTimer(int idx, unsigned long startTime, unsigned long stopTime) {
+void TimerSet::setTimer(unsigned long* startTime, unsigned long* stopTime) {
 	
-	m_startTimer[idx] = startTime;
-	m_stopTimer[idx] = stopTime;
+    for(int i=0; i<NUM_TIMERS; i++)
+    {
+        m_startTimer[i] = startTime[i];
+	m_stopTimer[i] = stopTime[i];
+    }
 	
-	if(idx == 0)
-            m_lastStateChange = CUR_TIME_W_TZ;
+	
+    m_lastStateChange = SEC_IN_DAY_W_TZ;
 }
 
 // =================================================================
@@ -268,14 +273,14 @@ void TimerSet::_storeEEPROM(char* str, int pos, int len){
 	#endif
 
 	for (int i=0; i<=len; i++){
-		EEPROM.write(pos+i, str[i]); // The null-terminal '\0' in string is also stored
+            EEPROM.write(pos+i, str[i]); // The null-terminal '\0' in string is also stored
     
-    #ifdef _DEBUG_TIME_SET_
+            /*#ifdef _DEBUG_TIME_SET_
 		Serial.print(pos+i);
 		Serial.print("-W-");
 		Serial.println((byte)str[i]);
-    #endif
-  }
+            #endif*/
+        }
 }
 
 void TimerSet::_loadEEPROM(char* str, int pos, int len){

@@ -29,7 +29,7 @@ public:
 		
 	void setTimeZone(int timeZone);
 	
-	void setTimer(int idx, unsigned long startTime, unsigned long stopTime);
+	void setTimer(unsigned long* startTime, unsigned long* stopTime);
 	
 	int loop();
 	void forceState(int state); 
