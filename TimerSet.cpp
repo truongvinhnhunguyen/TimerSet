@@ -3,8 +3,8 @@
 
 #define _DEBUG_TIME_SET_
 
-// #define SEC_IN_DAY_W_TZ ((m_timeZone + m_timeClient->getEpochTime())% 86400UL)
-#define SEC_IN_DAY_W_TZ m_timeClient->getEpochTime()% 86400UL
+#define SECS_IN_DAY_UTC m_timeClient->getEpochTime()% 86400UL
+#define SECS_FROM_START millis()/1000
 
 TimerSet::TimerSet(NTPClient* timeClient){
 	m_timeClient = timeClient;
@@ -34,23 +34,23 @@ int TimerSet::loop(){
 	int newState;
 	unsigned long *p;
 	
-	unsigned long secInDay = SEC_IN_DAY_W_TZ;; 
+	unsigned long secsInDay = SECS_IN_DAY_UTC;
+        unsigned long secsFromStart = SECS_FROM_START;
         
-      
         
-        
-	unsigned long sinceLastCheck = secInDay - m_lastCheck;
+	//unsigned long sinceLastCheck = secsInDay - m_lastCheck;
+        //unsigned long sinceLastCheck = secsFromStart - m_lastCheck;
 	
 	String s = String(m_stopTimer[0]);
 	
 	if(m_currentState == -1)
 		return -1;
         
-	if(sinceLastCheck > 5){ // Check every 5" since last check
+	if((secsFromStart - m_lastCheck) > 5){ // Check every 5" since last check
             
-            m_lastCheck = secInDay;
+            m_lastCheck = secsFromStart;
 
-            if(m_currentState == 0) { // If it is OFF, find event to turn it ON
+            if(m_currentState == 0) { // If it is OFF, find a timer to turn it ON
                     newState = 1;
                     p = m_startTimer;
 
@@ -58,7 +58,7 @@ int TimerSet::loop(){
                         Serial.println("OFF finds ON");
                     #endif
 
-            } else { // If it is ON, find event to turn it OFF
+            } else { // If it is ON, find timer to turn it OFF
                     newState = 0;
                     p = m_stopTimer;
 
@@ -68,26 +68,14 @@ int TimerSet::loop(){
             }	
 
             for(int i = 0; i < NUM_TIMERS; i++){
-                    if(i == 0)
-                            t = secInDay - m_lastStateChange - p[i];
+                    if(i == 0)                            
+                            t = secsFromStart - m_lastStateChange - p[i];
                     else
-                            t = secInDay - p[i];
-
-                    /*#ifdef _DEBUG_TIME_SET_
-                            Serial.print(i);
-                            Serial.print(" / ");
-                            Serial.print(secInDay);
-                            Serial.print(" / ");
-                            Serial.print(m_lastStateChange);
-                            Serial.print(" / ");
-                            Serial.print(p[i]);
-                            Serial.print(" / ");
-                            Serial.println(t);
-                    #endif*/
+                            t = secsInDay - p[i];
 
                     if ((t>=0 && t<5)||(t<0 && t>-5)) {
-                            m_currentState = newState;
-                            m_lastStateChange = secInDay;
+                            m_currentState = newState;                
+                            m_lastStateChange = secsFromStart;
 
                             #ifdef _DEBUG_TIME_SET_
                                     Serial.print("Timer[");
@@ -115,7 +103,14 @@ int TimerSet::loop(){
 // =================================================================
 void TimerSet::forceState(int state) {
 	m_currentState = state;
-	m_lastStateChange = SEC_IN_DAY_W_TZ;
+        restartInterval();
+}
+
+// =================================================================
+// void TimerSet::update()
+// =================================================================
+void TimerSet::restartInterval() {
+    m_lastStateChange = SECS_FROM_START;
 }
 
 // =================================================================
@@ -123,6 +118,13 @@ void TimerSet::forceState(int state) {
 // =================================================================
 int TimerSet::getState() {
     return m_currentState;
+}
+
+// =================================================================
+// void setState()
+// =================================================================
+void TimerSet::setState(int state) {
+    m_currentState = state;
 }
 
 // =================================================================
@@ -137,9 +139,10 @@ void TimerSet::setTimer(unsigned long* startTime, unsigned long* stopTime) {
     }
 	
 	
-    m_lastStateChange = SEC_IN_DAY_W_TZ;
+    m_lastStateChange = SECS_FROM_START;
 }
 
+/*
 // =================================================================
 // void setTimeZone(int timeZone)
 // timeZone param is in number of seconds
@@ -147,6 +150,7 @@ void TimerSet::setTimer(unsigned long* startTime, unsigned long* stopTime) {
 void TimerSet::setTimeZone(int timeZone) {
 	m_timeZone = timeZone;
 }
+*/
 
 // =================================================================
 // String TimerSet::toString()
@@ -243,6 +247,7 @@ void TimerSet::loadEEPROM(int pos) {
 		i++;
 	}
 	
+        str = "";
 	// Read time zone
 	while (buf[i] != '#'){
 		str += buf[i];
