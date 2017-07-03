@@ -27,13 +27,15 @@ unsigned long m_timeZone = 7*60*60; // Number of seconds
 public:
 	TimerSet(NTPClient* timeClient);
 		
-	void setTimeZone(int timeZone);
+	// void setTimeZone(int timeZone);
 	
 	void setTimer(unsigned long* startTime, unsigned long* stopTime);
 	
 	int loop();
 	void forceState(int state); 
+        void restartInterval();
         int getState();
+        void setState(int state);
         
         String toString();
 	
